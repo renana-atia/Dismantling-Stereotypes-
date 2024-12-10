@@ -1,0 +1,550 @@
+---
+title: "Stereotypes in 3D - Analysis Code"
+author: "Renana Atia"
+date: '2023-06-27'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+rm(list = ls()) # clean the global environment
+cat ("\014")    #clean the R console
+
+packages <- c("ggplot2", "readxl", "dplyr", "plotly", "olsrr", "ERSA", "viridis", "hrbrthemes", "sjPlot", "sjmisc", "lme4", "lmerTest", "interactions", "tibble", "broom", "simr", "scales", "Rmisc", "knitr", "kableExtra", "tidyverse","effsize", "survey", "tidyverse", "mice", "lavaan", "car", "report", "apaTables", "writexl", "psych", "ltm", "ggpubr", "QuantPsyc", "emmeans", "magrittr", "stats", "DescTools", "RVAideMemoire", 
+              "coin", "nonpar", "FSA", "rio", "foreign")
+
+# Install packages not yet installed
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages])
+}
+
+# Packages loading
+invisible(lapply(packages, library, character.only = TRUE))
+
+
+#call file pisrUO 2206023, name it pisr3.
+pisr3=import("./analysis/pisrUO 22062023.sav")
+
+#look at the basic stats of political ideology. 
+describe(pisr3$PolOr)
+
+#make a 3-level political orientation variable, for upcoming analysis. 
+#this is based on a standard above/below the mean computation, while the ,ean is 3.9, 
+#similar to the way hayez's process code would have standardized the original in analysis. 
+pisr3$RCL <- ifelse(pisr3$PolOr<2.2, "1", ifelse(pisr3$PolOr>5.61, '3', '2'))
+
+table(pisr3$PolOr, pisr3$RCL) 
+#check the new var of political groups comparted to the original. 
+
+colnames(pisr3)
+#to make a table of basic demographics and descriptive stats, first make the relevant
+#vars into factors.
+pisr3[, c(3, 80, 97, 99)] <- lapply(pisr3[, c(3, 80, 97, 99)], as.factor)
+levels(pisr3$Sex) <- c("Female", "Male")
+levels(pisr3$cond) <- c("control", "attitudes", "behavior", "traits")
+levels(pisr3$relig) <- c("Secular", "Traditional", "Religious", "Ultra Orthodox")
+levels(pisr3$RCL) <- c("Right", "Center", "Left")
+
+#report demodraphics. 
+
+table(pisr3$Sex)
+#295/568 = 51.9% female participants. 
+
+describe(pisr3$Age)
+describe(pisr3$Income)
+table(pisr3$relig)/sum(table(pisr3$relig))*100
+table(pisr3$Edu)/sum(table(pisr3$Edu))*100
+describe(pisr3$PolOr)
+
+#count number of participants per grpup:
+table(pisr3$cond)
+
+#make correlation table of main variables with each other. 
+main_cor <- subset(pisr3[,c(5, 30, 98)])
+apa.cor.table(main_cor)
+
+#report alpha levels for main scales:
+cronbach.alpha(pisr3[,48:50]) #social proximity
+
+#check diffs between conds on demographic variables:
+comp1 <- compare_means(
+  formula = Age ~ cond,
+  pisr3,
+  method = "kruskal.test",
+  paired = TRUE
+)
+comp1
+
+demog.cat <- data.frame(pisr3$cond,pisr3$Sex)
+demog.cat <- table(pisr3$cond,pisr3$Sex)
+print(demog.cat)
+print(chisq.test(demog.cat))
+
+comp1 <- compare_means(
+  formula = Income ~ cond,
+  pisr3,
+  method = "kruskal.test",
+  paired = TRUE
+)
+comp1
+
+
+comp1 <- compare_means(
+  formula = Edu ~ cond,
+  pisr3,
+  method = "kruskal.test",
+  paired = TRUE
+)
+comp1
+
+comp1 <- compare_means(
+  formula = PolInterest ~ cond,
+  pisr3,
+  method = "kruskal.test",
+  paired = TRUE
+)
+comp1
+
+comp1 <- compare_means(
+  formula = NewsConsum ~ cond,
+  pisr3,
+  method = "kruskal.test",
+  paired = TRUE
+)
+comp1
+
+demog.cat <- data.frame(pisr3$cond,pisr3$relig)
+demog.cat <- table(pisr3$cond,pisr3$relig)
+print(demog.cat)
+print(chisq.test(demog.cat))
+
+comp1 <- compare_means(
+  formula = PolOr ~ cond,
+  pisr3,
+  method = "kruskal.test",
+  paired = TRUE
+)
+comp1
+
+#replace labels from qualtrics:
+table(pisr3$mc_traits)
+#mc_pride = traits
+pisr3 <- pisr3 %>% rename_at('mc_pride', ~'mc_traits')
+#mc_discontempt = behavior
+pisr3 <- pisr3 %>% rename_at('mc_discontempt', ~'mc_behavior')
+#mc_appreciation = attitudes
+pisr3 <- pisr3 %>% rename_at('mc_appreciation', ~'mc_attitudes')
+
+describeBy(pisr3$mc_attitudes, group = pisr3$cond)
+describeBy(pisr3$mc_behavior, group = pisr3$cond)
+describeBy(pisr3$mc_traits, group = pisr3$cond)
+
+# Reordering Levels of cond, to be able to compare to each group on demand (instead of having to compare to the control):
+pisr3$behavior <- factor(pisr3$cond, levels=c("behavior", "traits", "attitudes", "control"))
+pisr3$traits <- factor(pisr3$cond, levels=c("traits", "behavior", "attitudes", "control"))
+pisr3$attitudes <- factor(pisr3$cond, levels=c("attitudes", "traits", "behavior", "control"))
+is.factor(pisr3$cond)
+
+#just to make sure all is in order:
+table(pisr3$cond, pisr3$attitudes)
+
+#aovs for the manipulation checks. for each specialized manipulation check, we want to compare the main group (after which the MC is called), to the rest.
+aov1 <- aov(mc_behavior ~ behavior, pisr3)
+aov2 <- aov(mc_traits ~ traits, pisr3)
+aov3 <- aov(mc_attitudes ~ attitudes, pisr3)
+
+mod_summaries <- list(aov1, aov2, aov3)                   
+# Create aov model list
+
+#run a loop for both summaries and parcial eta squared results. 
+for (i in mod_summaries)
+{
+    print(summary.lm(i))
+  
+  print(DescTools::EtaSq(i, type = 3))
+}
+
+
+```
+
+
+```{aov for dependent vars}
+
+pisr3$sthermometer_A <- scale(pisr3$thermometer_A, center = TRUE, scale = TRUE)
+pisr3$sSDA <- scale(pisr3$SDA, center = TRUE, scale = TRUE)
+pisr3$sPolOr <- scale(pisr3$PolOr, center = TRUE, scale = TRUE)
+
+aov1 <- lm(sthermometer_A ~ cond*PolOr, pisr3)
+aov2 <- lm(sSDA ~ cond*PolOr, pisr3)
+
+mod_summaries <- list(aov1, aov2)                  
+# Create aov model list
+
+for (i in mod_summaries)
+{
+    print(summary.lm(i))
+    print(interact_plot(i, pred = PolOr, modx = cond, interval = TRUE))
+    print(sim_slopes(i, pred = PolOr, modx = cond, interval = TRUE))
+}
+
+#interaction plots for paper:
+
+####
+#make dummies to present only behavior and control in the plots. 
+is.factor(pisr3$cond)
+levels(pisr3$cond)
+pisr3$C_A <- ifelse(pisr3$cond == "attitudes", 1,0)
+pisr3$C_B <- ifelse(pisr3$cond == "behavior", 1,0)
+pisr3$C_T <- ifelse(pisr3$cond == "traits", 1,0)
+
+pisr3$C_A <- as.numeric(pisr3$C_A)
+pisr3$C_B <- as.numeric(pisr3$C_B)
+pisr3$C_T <- as.numeric(pisr3$C_T)
+
+aov1 <- lm(scale(thermometer_A) ~ C_B*PolOr + C_T*PolOr + C_A*PolOr, pisr3)
+aov2 <- lm(scale(SDA) ~ C_B*PolOr + C_T*PolOr + C_A*PolOr, pisr3)
+
+#produce plots
+interact_plot(aov1, pred = PolOr, modx = C_B, data = pisr3, interval = TRUE,
+              x.label = "Political Ideology", y.label = "Thermometer", modx.labels = c("Control", "Behavior"), legend.main = "Conditions") #for behavior interaction
+
+interact_plot(aov1, pred = PolOr, modx = C_T, data = pisr3, interval = TRUE,
+              x.label = "Political Ideology", y.label = "Thermometer", modx.labels = c("Control", "Traits"), legend.main = "Conditions") #for trait interaction
+
+interact_plot(aov1, pred = PolOr, modx = C_A, data = pisr3, interval = TRUE,
+              x.label = "Political Ideology", y.label = "Thermometer", modx.labels = c("Control", "Attitudes"), legend.main = "Conditions") #for attitudes interaction
+
+
+#SDA PLOTS
+interact_plot(aov2, pred = PolOr, modx = C_B, data = pisr3, interval = TRUE,
+              x.label = "Political Ideology", y.label = "Social Distance", modx.labels = c("Control", "Behavior"), legend.main = "Conditions") #for behavior interactions
+
+interact_plot(aov2, pred = PolOr, modx = C_T, data = pisr3, interval = TRUE,
+              x.label = "Political Ideology", y.label = "Social Distance", modx.labels = c("Control", "Traits"), legend.main = "Conditions") #for attitudes interaction
+
+interact_plot(aov2, pred = PolOr, modx = C_A, data = pisr3, interval = TRUE,
+              x.label = "Political Ideology", y.label = "Social Distance", modx.labels = c("Control", "Attitudes"), legend.main = "Conditions") #for attitudes interaction
+
+
+
+#second analysis step:
+#simple effects/planned contrast
+
+#for that, we create separate DFs for each political group (working with RCL)
+#and then use "compare_means" on each group, for the relevant pair of conditions. 
+
+
+x <- split(pisr3, pisr3$RCL)
+rightdf <- x[[1]]
+centerdf <- x[[2]]
+leftdf <- x[[3]]
+
+#DV: thermometer
+aovL <- lm(thermometer_A ~ C_A + C_B + C_T, leftdf)
+summary.lm(aovL)
+apa.1way.table(cond, thermometer_A, leftdf) #with means and SDs for all conditions.
+apa.aov.table(aovL) #for table 2 reportings
+
+aovR <- lm(sthermometer_A ~ C_A + C_B + C_T, rightdf)
+summary.lm(aovR)
+apa.1way.table(cond, thermometer_A, rightdf) #with means and SDs for all conditions.
+apa.aov.table(aovR) #for table 2 reportings
+
+aovC <- lm(sthermometer_A ~ C_A + C_B + C_T, centerdf)
+summary.lm(aovC)
+apa.1way.table(cond, thermometer_A, centerdf) #with means and SDs for all conditions.
+apa.aov.table(aovC) #for table 2 reportings
+
+
+#DV: SDA
+aovL <- lm(sSDA ~ C_A + C_B + C_T, leftdf)
+summary.lm(aovL)
+apa.1way.table(cond, SDA, leftdf)#with means and SDs for all conditions.
+apa.aov.table(aovL)#for table 3 reportings
+
+aovR <- lm(sSDA ~ C_A + C_B + C_T, rightdf)
+summary.lm(aovR)
+apa.1way.table(cond, SDA, rightdf)#with means and SDs for all conditions.
+apa.aov.table(aovR)#for table 3 reportings
+
+aovC <- lm(sda.log ~ C_A + C_B + C_T, centerdf)
+summary.lm(aovC)
+apa.1way.table(cond, SDA, centerdf)#with means and SDs for all conditions.
+apa.aov.table(aovC)#for table 3 reportings
+
+```
+
+
+##CODE FOR S2: ISRAELI-PALESTINIAN CONTEXT
+
+```{r setup, include=FALSE}
+rm(list = ls()) # clean the global environment
+cat ("\014")    #clean the R console
+
+packages <- c("ggplot2", "readxl", "dplyr", "plotly", "olsrr", "ERSA", "viridis", "hrbrthemes", "sjPlot", "sjmisc", "lme4", "lmerTest", "interactions", "tibble", "broom", "simr", "scales", "Rmisc", "knitr", "kableExtra", "tidyverse","effsize", "survey", "tidyverse", "mice", "lavaan", "car", "report", "sjPlot", "apaTables", "writexl", "psych", "ltm", "ggpubr")
+
+# Install packages not yet installed
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages])
+}
+
+# Packages loading
+invisible(lapply(packages, library, character.only = TRUE))
+
+#call file pisrA 12012023, name it pisr3.
+pisr3=import("./analysis/pisrA 22062023.sav")
+describe(pisr3$PolOr)
+
+#create RCL: 1=mean-1SD, 2=mean, 3=mean+1SD
+pisr3$RCL <- ifelse(pisr3$PolOr<2.39, "1", ifelse(pisr3$PolOr>5.69, '3', '2'))
+is.factor(pisr3$RCL)
+
+table(pisr3$PolOr, pisr3$RCL) #created a var with political groups. 
+
+colnames(pisr3)
+
+#basic demographics and descriptive stats.
+pisr3[, c(104, 112, 115, 117)] <- lapply(pisr3[, c(104, 112, 115, 117)], as.factor)
+levels(pisr3$Sex) <- c("Female", "Male")
+levels(pisr3$cond) <- c("control", "attitudes", "behavior", "traits")
+levels(pisr3$relig) <- c("Secular", "Traditional", "Religious", "Ultra Orthodox")
+levels(pisr3$RCL) <- c("Right", "Center", "Left")
+
+is.factor(pisr3$Sex)
+
+table(pisr3$Sex)
+#252/357 = 70.5% female participants. 
+describe(pisr3$Age)
+describe(pisr3$Income)
+table(pisr3$relig)/sum(table(pisr3$relig))*100
+table(pisr3$Edu)/sum(table(pisr3$Edu))*100
+describe(pisr3$PolOr)
+
+#verify number of participants in each condition
+table(pisr3$cond)
+
+colnames(pisr3)
+#make correlation table of main variables with each other. 
+main_cor <- subset(pisr3[,c(113, 62, 116)])
+apa.cor.table(main_cor)
+
+#report alpha levels for main scales:
+cronbach.alpha(pisr3[,80:82]) #social proximity
+
+
+#check there are no diffs between conds on demographics:
+
+comp1 <- compare_means(
+  formula = Age ~ cond,
+  pisr3,
+  method = "kruskal.test",
+  paired = TRUE
+)
+comp1
+
+demog.cat <- data.frame(pisr3$cond,pisr3$Sex)
+demog.cat <- table(pisr3$cond,pisr3$Sex)
+print(demog.cat)
+print(chisq.test(demog.cat))
+
+comp1 <- compare_means(
+  formula = Income ~ cond,
+  pisr3,
+  method = "kruskal.test",
+  paired = TRUE
+)
+comp1
+
+comp1 <- compare_means(
+  formula = Edu ~ cond,
+  pisr3,
+  method = "kruskal.test",
+  paired = TRUE
+)
+comp1
+
+comp1 <- compare_means(
+  formula = PolInterest ~ cond,
+  pisr3,
+  method = "kruskal.test",
+  paired = TRUE
+)
+comp1
+
+comp1 <- compare_means(
+  formula = NewsConsum ~ cond,
+  pisr3,
+  method = "kruskal.test",
+  paired = TRUE
+)
+comp1
+
+comp1 <- compare_means(
+  formula = relig ~ cond,
+  pisr3,
+  method = "kruskal.test",
+  paired = TRUE
+)
+comp1
+
+comp1 <- compare_means(
+  formula = PolOr ~ cond,
+  pisr3,
+  method = "kruskal.test",
+  paired = TRUE
+)
+comp1
+
+#main effects analysis
+
+levels(pisr3$cond)
+
+#check diffs between conditions on manipulations check questions. 
+#replace labels from qualtrics:
+table(pisr3$mc_traits)
+#mc_pride = traits
+pisr3 <- pisr3 %>% rename_at('mc_pride', ~'mc_traits')
+#mc_discontempt = behavior
+pisr3 <- pisr3 %>% rename_at('mc_discontempt', ~'mc_behavior')
+#mc_appreciation = attitudes
+pisr3 <- pisr3 %>% rename_at('mc_appreciation', ~'mc_attitudes')
+
+
+describeBy(pisr3$mc_attitudes, group = pisr3$cond)
+describeBy(pisr3$mc_behavior, group = pisr3$cond)
+describeBy(pisr3$mc_traits, group = pisr3$cond)
+
+# Reordering Levels of cond, to be able to compare to each group on demand (instead of having to compare to the control):
+pisr3$behavior <- factor(pisr3$cond, levels=c("behavior", "traits", "attitudes", "control"))
+pisr3$traits <- factor(pisr3$cond, levels=c("traits", "behavior", "attitudes", "control"))
+pisr3$attitudes <- factor(pisr3$cond, levels=c("attitudes", "traits", "behavior", "control"))
+is.factor(pisr3$cond)
+
+#just to make sure all is in order:
+table(pisr3$cond, pisr3$attitudes)
+
+#aovs for the manipulation checks. for each specialized manipulation check, we want to compare the main group (after which the MC is called), to the rest.
+aov1 <- aov(mc_behavior ~ behavior, pisr3)
+aov2 <- aov(mc_traits ~ traits, pisr3)
+aov3 <- aov(mc_attitudes ~ attitudes, pisr3)
+
+mod_summaries <- list(aov1, aov2, aov3)                   
+# Create aov model list
+
+#run a loop for both summaries and parcial eta squared results. 
+for (i in mod_summaries)
+{
+    print(summary.lm(i))
+  
+  print(DescTools::EtaSq(i, type = 3))
+}
+
+```
+
+
+```{aov for dependent vars}
+
+pisr3$sthermometer_A <- scale(pisr3$thermometer_A, center = TRUE, scale = TRUE)
+pisr3$sSDA <- scale(pisr3$SDA, center = TRUE, scale = TRUE)
+pisr3$sPolOr <- scale(pisr3$PolOr, center = TRUE, scale = TRUE)
+
+aov1 <- lm(sthermometer_A ~ cond*PolOr, pisr3)
+aov2 <- lm(sSDA ~ cond*PolOr, pisr3)
+
+mod_summaries <- list(aov1, aov2)                  
+# Create aov model list
+
+for (i in mod_summaries)
+{
+    print(summary.lm(i))
+    print(interact_plot(i, pred = PolOr, modx = cond, interval = TRUE))
+    print(sim_slopes(i, pred = PolOr, modx = cond, interval = TRUE))
+}
+
+#interaction plots for paper:
+
+####
+#make dummies to present only behavior and control in the plots. 
+is.factor(pisr3$cond)
+levels(pisr3$cond)
+pisr3$C_A <- ifelse(pisr3$cond == "attitudes", 1,0)
+pisr3$C_B <- ifelse(pisr3$cond == "behavior", 1,0)
+pisr3$C_T <- ifelse(pisr3$cond == "traits", 1,0)
+
+pisr3$C_A <- as.numeric(pisr3$C_A)
+pisr3$C_B <- as.numeric(pisr3$C_B)
+pisr3$C_T <- as.numeric(pisr3$C_T)
+
+aov1 <- lm(scale(thermometer_A) ~ C_B*PolOr + C_T*PolOr + C_A*PolOr, pisr3)
+aov2 <- lm(scale(SDA) ~ C_B*PolOr + C_T*PolOr + C_A*PolOr, pisr3)
+
+#produce plots
+interact_plot(aov1, pred = PolOr, modx = C_B, data = pisr3, interval = TRUE,
+              x.label = "Political Ideology", y.label = "Thermometer", modx.labels = c("Control", "Behavior"), legend.main = "Conditions") #for behavior interaction
+
+interact_plot(aov1, pred = PolOr, modx = C_T, data = pisr3, interval = TRUE,
+              x.label = "Political Ideology", y.label = "Thermometer", modx.labels = c("Control", "Traits"), legend.main = "Conditions") #for trait interaction
+
+interact_plot(aov1, pred = PolOr, modx = C_A, data = pisr3, interval = TRUE,
+              x.label = "Political Ideology", y.label = "Thermometer", modx.labels = c("Control", "Attitudes"), legend.main = "Conditions") #for attitudes interaction
+
+
+#SDA PLOTS
+interact_plot(aov2, pred = PolOr, modx = C_B, data = pisr3, interval = TRUE,
+              x.label = "Political Ideology", y.label = "Social Distance", modx.labels = c("Control", "Behavior"), legend.main = "Conditions") #for behavior interactions
+
+interact_plot(aov2, pred = PolOr, modx = C_T, data = pisr3, interval = TRUE,
+              x.label = "Political Ideology", y.label = "Social Distance", modx.labels = c("Control", "Traits"), legend.main = "Conditions") #for attitudes interaction
+
+interact_plot(aov2, pred = PolOr, modx = C_A, data = pisr3, interval = TRUE,
+              x.label = "Political Ideology", y.label = "Social Distance", modx.labels = c("Control", "Attitudes"), legend.main = "Conditions") #for attitudes interaction
+
+
+
+#second analysis step:
+#simple effects/planned contrast
+
+#for that, we create separate DFs for each political group (working with RCL)
+#and then use "compare_means" on each group, for the relevant pair of conditions. 
+
+
+x <- split(pisr3, pisr3$RCL)
+rightdf <- x[[1]]
+centerdf <- x[[2]]
+leftdf <- x[[3]]
+
+#DV: thermometer
+aovL <- lm(thermometer_A ~ C_A + C_B + C_T, leftdf)
+summary.lm(aovL)
+apa.1way.table(cond, thermometer_A, leftdf) #with means and SDs for all conditions.
+apa.aov.table(aovL) #for table 2 reportings
+
+aovR <- lm(sthermometer_A ~ C_A + C_B + C_T, rightdf)
+summary.lm(aovR)
+apa.1way.table(cond, thermometer_A, rightdf) #with means and SDs for all conditions.
+apa.aov.table(aovR) #for table 2 reportings
+
+aovC <- lm(sthermometer_A ~ C_A + C_B + C_T, centerdf)
+summary.lm(aovC)
+apa.1way.table(cond, thermometer_A, centerdf) #with means and SDs for all conditions.
+apa.aov.table(aovC) #for table 2 reportings
+
+
+#DV: SDA
+aovL <- lm(sSDA ~ C_A + C_B + C_T, leftdf)
+summary.lm(aovL)
+apa.1way.table(cond, SDA, leftdf)#with means and SDs for all conditions.
+apa.aov.table(aovL)#for table 3 reportings
+
+aovR <- lm(sSDA ~ C_A + C_B + C_T, rightdf)
+summary.lm(aovR)
+apa.1way.table(cond, SDA, rightdf)#with means and SDs for all conditions.
+apa.aov.table(aovR)#for table 3 reportings
+
+aovC <- lm(sda.log ~ C_A + C_B + C_T, centerdf)
+summary.lm(aovC)
+apa.1way.table(cond, SDA, centerdf)#with means and SDs for all conditions.
+apa.aov.table(aovC)#for table 3 reportings
+
+```

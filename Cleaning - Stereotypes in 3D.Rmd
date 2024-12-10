@@ -1,0 +1,447 @@
+---
+title: "Clean - Stereotypes in 3D"
+author: "Renana Atia"
+date: '2023-06-22'
+output: html_document
+---
+
+##Study 1 Cleaning 
+```{r setup, include=FALSE}
+rm(list = ls()) # clean the global environment
+cat ("\014")    #clean the R console
+
+packages <- c("rio", "lavaan", "foreign", "car", "multcomp", "interactions", "report", "dplyr", "sjPlot", "apaTables", "writexl", "ggpubr", "dplyr", "ggplot2", "ggpubr", "psych", "report", "dplyr", "sjPlot", "apaTables", "ltm", "rcompanion", "sjPlot", "apaTables", "rio", "foreign", "datasets", "plyr", "dplyr")
+
+# Install packages not yet installed
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages])
+}
+
+# Packages loading
+invisible(lapply(packages, library, character.only = TRUE))
+
+
+#import file named PISR_01112022 from computer into R. The file already has meaningful
+#names, scales were checked, and all unnecessary vars were removed. 
+
+pisr <- import("C:/Everything R/Analysis - PISR/Ultra Orthodox Data/PISR_01112022.sav", 
+                  to.data.frame = TRUE, stringsAsFactors = TRUE, header = TRUE)
+colnames(pisr)
+pisr <- subset(pisr, religion_filter==1)
+pisr <- subset(pisr, relig!=4)
+#remove those who didn't qualify for the experiment to begin with: non-Jewish participants, 
+#and ultra-orthodox participants. 
+pisr <- subset(pisr, !is.na(PolOr))
+#remove those who were previews/didn't continue to answer.
+
+table(pisr$Progress)
+#those with less than 50 in progress did not continue after seeing text or 
+#didnt see the text, and should thus be removed.
+pisr <- subset(pisr, Progress>50)
+#4 left after entering the control text. 1 left after seeing the attitudes text. 
+
+colnames(pisr)
+
+pisr <- subset(pisr, select = -c(1:5, 7:17, 179:247))
+#remove unnecessary columns such as embedded data used for gendered language 
+names(pisr)
+#check names again to see renaming worked. 
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r cleaning 1}
+
+#make general condition column:
+
+pisr$FL_7_DO_ATTITUDES <- replace(pisr$FL_7_DO_ATTITUDES, 
+                                pisr$FL_7_DO_ATTITUDES==1, 2)
+pisr$FL_7_DO_BEHAVIOR <- replace(pisr$FL_7_DO_BEHAVIOR, 
+                                   pisr$FL_7_DO_BEHAVIOR==1, 3)
+pisr$FL_7_DO_TRAITS <- replace(pisr$FL_7_DO_TRAITS, 
+                                   pisr$FL_7_DO_TRAITS==1, 4)
+pisr$FL_7_DO_Control1 <- replace(pisr$FL_7_DO_Control1, 
+                                   pisr$FL_7_DO_Control1==1, 1)
+#FL_7_DO_Control1 remains as 1. 
+
+pisr$cond <- dplyr::coalesce(pisr$FL_7_DO_Control1, 
+                               pisr$FL_7_DO_ATTITUDES,
+                               pisr$FL_7_DO_BEHAVIOR,
+                               pisr$FL_7_DO_TRAITS) 
+                                #make separate conds vars into one factor. 
+
+table(pisr$cond)
+
+###reading questions: participants were given a second chance if they got the answer 
+#wrong in the first place. First time the question appeared is marked with the 
+#letter "a", second chance (to those who got it wrong) is marke in "b". 
+
+#fisrst reading question: the right answer was 3. 
+table(pisr$BReadingQ1a)
+table(pisr$TReadingQ1a)
+table(pisr$AReadingQ1a)
+table(pisr$CReadingQ1a)
+
+table(pisr$BReadingQ1b)
+table(pisr$TReadingQ1b)
+table(pisr$AReadingQ1b)
+table(pisr$CReadingQ1b)
+
+#behavior: 56 were wrong on the first reading question, 1 removed after the second chance. 
+#traits: 54 were wrong on the first,  1 removed after second chance.
+#attitudes: 68 were wrong on the first, 2 were removed after the second.
+#control: 44 were wrong on first, 1 was removed after second chance. 
+#Total: 5
+
+#Second reading question: right answer was 2. 
+table(pisr$BReadingQ2a)
+table(pisr$TReadingQ2a)
+table(pisr$AReadingQ2a)
+table(pisr$CReadingQ2a)
+
+table(pisr$BReadingQ2b)
+table(pisr$TReadingQ2b)
+table(pisr$AReadingQ2b)
+table(pisr$CReadingQ2b)
+#behavior: 5 were wrong on the first reading question, 0 removed on the second chance. 
+#traits: 5 were wrong on the first,  0 removed on second chance.
+#attitudes: 6 were wrong on the first, 0 were removed on the second.
+#control: 46 were wrong on first, 0 removed on second chance. 
+#Total: 0
+
+table(pisr$CReadingQ3a)
+table(pisr$CReadingQ3b)
+#control: 11 were wrong on first, 0 removed on second chance. 
+
+#remove failed from the list
+pisr1 <- subset(pisr, 
+                      BReadingQ1b==3 | TReadingQ1b==3 | AReadingQ1b==3 | CReadingQ1b==3 | 
+                        BReadingQ1a==3 | TReadingQ1a==3 | AReadingQ1a==3 | CReadingQ1a==3 |
+                       BReadingQ2b==2 | TReadingQ2b==2 | AReadingQ2b==2 | CReadingQ2b==2 | 
+                       BReadingQ2a==2 | TReadingQ2a==2 | AReadingQ2a==2 | CReadingQ2a==2 |
+                     CReadingQ3a==2 | CReadingQ3b==2)
+
+pisr8 <- subset(pisr, 
+                      BReadingQ1b==3 | 
+                        BReadingQ1a==3 & 
+                       BReadingQ2b==2 | 
+                       BReadingQ2a==2 )#126
+pisr8 <- subset(pisr, 
+                      TReadingQ1b==3 | 
+                        TReadingQ1a==3 & 
+                       TReadingQ2b==2 | 
+                       TReadingQ2a==2 ) #149
+
+pisr8 <- subset(pisr, 
+                      AReadingQ1b==3 | 
+                        AReadingQ1a==3 & 
+                       AReadingQ2b==2 | 
+                       AReadingQ2a==2 ) #150
+
+pisr8 <- subset(pisr, 
+                       CReadingQ1b==3 | 
+                         CReadingQ1a==3 &
+                      CReadingQ2b==2 | 
+                       CReadingQ2a==2 &
+                     CReadingQ3a==2 | CReadingQ3b==2) #155
+
+#there were 25 who didn't continue out of their own choice, along with the 5 who 
+# failed reading Qs, which makes a sum of 30 that were excluded here. 
+
+#610 recruited, 5 failed reading, 25 droped out. 
+
+#this is for cleaning out all participants who failed attention check
+#basically if participants answered anything but 2 on this attcheck item, 
+#they failed, were immediately screened, and their line should be removed. 
+
+
+#first attcheck appeared in the questions presented only to the experimental conds. 
+#meanind control participants could not see it. 
+table(pisr1$attcheck1, pisr1$cond)
+#one failed in each condition, 0 failed on control
+#total failed: 3.
+
+table(pisr1$attcheck2, pisr1$cond)
+#1 failed in control. 
+#total failed: 1.
+
+
+pisr2 <- subset(pisr1, cond >1 & attcheck1==2 | cond==1 & is.na(attcheck1))
+#three were found to have failed, but 4 more didn't continue answering. 
+table(pisr2$cond)
+
+pisr3 <- subset(pisr2, attcheck2==5)
+#one was found manually, but 3 more dropped on their own. 
+
+table(pisr3$cond, pisr3$PolOr)
+
+pisr4 <- subset(pisr3, PolOr!="-99")
+#remove missing values that are inadmissible -99. 
+
+#subset without unnecessary vars. 
+colnames(pisr4)
+pisr4 <- subset(pisr4, select = -c(6:75))
+```
+
+
+```{r scale}
+
+
+                                 ###Social Distancing###
+pisr4 <- pisr4 %>% relocate(attcheck2, .after = competence_4)
+colnames(pisr4)
+cronbach.alpha(pisr4[,48:50])
+
+pisr4$SDA <- (pisr4$SDA_1 + 
+                      pisr4$SDA_2 + 
+                      pisr4$SDA_3)/3 
+                        #create the var.
+
+```
+
+
+```{r correlations}
+#correlation of the three main variables. 
+apa.cor.table(subset(pisr4, select = c(PolOr, thermometer_A, SDA)))
+
+```
+
+```{r extraction of both files}
+
+#export datasets
+
+#export(pisr4, "C:/Everything R/Analysis - PISR/r-project-template-based/Stereotypes in #3D/Analysis/pisrUO 22062023.sav")
+
+
+```
+
+##Study 2 Cleaning 
+
+```{r setup, include=FALSE}
+toremove <- grep("^pisr4", ls(), 
+                 invert = TRUE, 
+                 value = TRUE)
+
+rm(list = c(toremove, "toremove"))
+
+#rm(list = ls()) # clean the global environment
+#cat ("\014")    #clean the R console
+
+#since one package or more interfere with the "-ends_with" code, we'll detatch all, and then reload them after cleaning is done. 
+
+detach("package:rio", unload = TRUE)
+detach("package:lavaan", unload = TRUE)
+detach("package:foreign", unload = TRUE)
+detach("package:car", unload = TRUE)
+detach("package:multcomp", unload = TRUE)
+detach("package:interactions", unload = TRUE)
+detach("package:report", unload = TRUE)
+detach("package:dplyr", unload = TRUE)
+detach("package:sjPlot", unload = TRUE)
+detach("package:apaTables", unload = TRUE)
+detach("package:writexl", unload = TRUE)
+detach("package:ggpubr", unload = TRUE)
+detach("package:dplyr", unload = TRUE)
+detach("package:ggplot2", unload = TRUE)
+detach("package:ggpubr", unload = TRUE)
+detach("package:psych", unload = TRUE)
+detach("package:report", unload = TRUE)
+detach("package:dplyr", unload = TRUE)
+detach("package:sjPlot", unload = TRUE)
+detach("package:apaTables", unload = TRUE)
+detach("package:ltm", unload = TRUE)
+detach("package:rcompanion", unload = TRUE)
+detach("package:sjPlot", unload = TRUE)
+detach("package:apaTables", unload = TRUE)
+detach("package:rio", unload = TRUE)
+detach("package:foreign", unload = TRUE)
+detach("package:datasets", unload = TRUE)
+detach("package:plyr", unload = TRUE)
+detach("package:dplyr", unload = TRUE)
+
+#since we spreaded the questionnaire in both the SONA system and via social media and other means simultaneusely, two files need to be combined. Import file named pisr_social and the one named pisr_sona from computer into R - they should appear in the "data" folder. 
+
+library(rio)
+library(foreign)
+
+pisr_social <- import("C:/Everything R/Analysis - PISR/r-project-template-based/Stereotypes in 3D/Data/pisr_social.sav", 
+                  to.data.frame = TRUE, stringsAsFactors = TRUE, header = TRUE)
+colnames(pisr_social)
+
+pisr_sona <- import("C:/Everything R/Analysis - PISR/r-project-template-based/Stereotypes in 3D/Data/pisr_sona.sav", 
+                  to.data.frame = TRUE, stringsAsFactors = TRUE, header = TRUE)
+colnames(pisr_sona)
+
+library(plyr)
+library(dplyr)
+
+pisr_social <- subset(pisr_social, select = -c(166:167, 169:236))
+pisr_social <- select(pisr_social, -ends_with(c("Click", "Submit", "Count")))
+colnames(pisr_social)[114] <- "id"
+pisr_sona <- subset(pisr_sona, select = -c(166:235))
+pisr_sona <- select(pisr_sona, -ends_with(c("Click", "Submit", "Count")))
+
+
+#pisr_social <- subset(pisr_social, IPAddress!="")
+#pisr_social <- pisr_social[!duplicated(pisr_social$IPAddress),]
+#pisr_sona <- subset(pisr_sona, id!="")
+#pisr_sona <- pisr_sona[!duplicated(pisr_sona$id),]
+
+#add to the social data user id. 
+pisr_social <- subset(pisr_social, religion_filter==1)
+#pisr_social.dup <- pisr_social[duplicated(pisr_social$IPAddress),]
+
+pisr <- rbind(pisr_social, pisr_sona)
+table(pisr$Progress)
+#those with less than 50 in progress did not even see a text, and should be removed.
+pisr <- subset(pisr, Progress>50)
+#444 started the process of replying. 
+
+names(pisr)
+#check names again to see renaming worked. 
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r cleaning 1}
+
+#make general condition column:
+
+pisr$FL_7_DO_ATTITUDES <- replace(pisr$FL_7_DO_ATTITUDES, 
+                                pisr$FL_7_DO_ATTITUDES==1, 2)
+pisr$FL_7_DO_BEHAVIOR <- replace(pisr$FL_7_DO_BEHAVIOR, 
+                                   pisr$FL_7_DO_BEHAVIOR==1, 3)
+pisr$FL_7_DO_TRAITS <- replace(pisr$FL_7_DO_TRAITS, 
+                                   pisr$FL_7_DO_TRAITS==1, 4)
+pisr$FL_7_DO_Control1 <- replace(pisr$FL_7_DO_Control1, 
+                                   pisr$FL_7_DO_Control1==1, 1)
+#FL_7_DO_Control1 remains as 1. 
+
+pisr$cond <- dplyr::coalesce(pisr$FL_7_DO_Control1, 
+                               pisr$FL_7_DO_ATTITUDES,
+                               pisr$FL_7_DO_BEHAVIOR,
+                               pisr$FL_7_DO_TRAITS) 
+                                #make separate conds vars into one factor. 
+
+#drop the separate condition columns:
+pisr <- select(pisr, -starts_with("FL_7_DO"))
+names(pisr)
+table(pisr$cond)
+
+###reading questions:
+table(pisr$CReadingQ1b)
+#behavior: 43 were wrong twice on the first reading question, 3 on the second. 
+#traits: 51 were wrong twice on the first,  7 on the second.
+#attitudes: 49 were wrong twice on the first, 2 on the second.
+#control: 32 were wrong on first, none on the others. 
+#12 dropped on the 1st reading Q.
+
+table(pisr$CReadingQ2b)
+#behavior: 3 were wrong twice on the first reading question, none on the second. 
+#traits: 8 were wrong twice on the first,  none on the second.
+#attitudes: 4 were wrong twice on the first, none on the second.
+#control: 16 were wrong on first, none on the others. 
+#0 dropped on the 2nd reading Q.
+
+
+table(pisr$CReadingQ3b)
+#control: 2 were wrong on first, none on the others. 
+#0 dropped on the 3rd reading Q.
+
+pisr1 <- subset(pisr, 
+                      BReadingQ1b==3 | TReadingQ1b==3 | AReadingQ1b==3 | CReadingQ1b==3 | 
+                        BReadingQ1a==3 | TReadingQ1a==3 | AReadingQ1a==3 | CReadingQ1a==3 |
+                       BReadingQ2b==2 | TReadingQ2b==2 | AReadingQ2b==2 | CReadingQ2b==2 | 
+                       BReadingQ2a==2 | TReadingQ2a==2 | AReadingQ2a==2 | CReadingQ2a==2 |
+                     CReadingQ3a==2 | CReadingQ3b==2)
+#we note that although we manually found 12 to be dropped, there are 21 more that were dropped by the code. we explain this by concluding that some didn't continue to the questions phase, though they saw a text. 
+
+
+
+#this is for cleaning out all participants who failed attention check on the
+#first wave of questionnaire. 
+#basically if participants answered anything but 2 on this attcheck1 item, 
+#they failed and should be removed. 
+library(dplyr)
+table(pisr1$attcheck1, pisr1$cond)
+
+#1 failed in attitudes, 1 failed in behavior and 1 in traits.
+#total failed: 3.
+
+table(pisr1$attcheck2, pisr1$cond) #right answer is 5.
+#3 failed control, 1 failed behavior, 2 failed traits. 
+#total failed: 6.
+
+isnaatt1 <- subset(pisr1, cond>1 & is.na(attcheck1))
+#20 participants didn't answer the attention check -whether because they dropped before they
+#got to it, or right after seeing it.
+#added to the 3 who failed, that explains the gap of 23 between pisr1 and pisr2 that will
+#materialize with the next row of code.
+
+pisr2 <- subset(pisr1, cond >1 & attcheck1==2 | cond==1 & is.na(attcheck1))
+
+isnaatt2 <- subset(pisr2, is.na(attcheck2))
+#24 participants chose not to continue at the point of the second attention check.
+#added to the 6 who were wrong, that makes 30 and explains the gap between pisr2 and pisr3.
+pisr3 <- subset(pisr2, attcheck2==5)
+
+
+#now since there is no need in -ends_with or -starts_with, the bulk loading can be done:
+packages <- c("rio", "lavaan", "foreign", "car", "multcomp", "interactions", "report", "dplyr", "sjPlot", "apaTables", "writexl", "ggpubr", "dplyr", "ggplot2", "ggpubr", "psych", "report", "dplyr", "sjPlot", "apaTables", "ltm", "rcompanion", "sjPlot", "apaTables", "rio", "foreign", "datasets", "plyr", "dplyr")
+
+# Install packages
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages])
+}
+
+# Packages loading
+invisible(lapply(packages, library, character.only = TRUE))
+
+```
+
+```{r further cleaning}
+
+pisr3 <- subset(pisr3, !is.na(PolOr))
+#removed NAs. 
+
+```
+
+##Scales for Study 2
+
+```{r scales study 2}
+colnames(pisr3)
+                                 ###Social Distance###
+pisr3 <- pisr3 %>% relocate(attcheck2, .after = competence_4)
+library(ltm)
+cronbach.alpha(pisr3[,80:82])
+
+pisr3$SDA <- (pisr3$SDA_1 + 
+                      pisr3$SDA_2 + 
+                      pisr3$SDA_3)/3 
+                        #create the var.
+
+```
+
+```{r correlation S2}
+#correlation of the three main variables. 
+apa.cor.table(subset(pisr3, select = c(PolOr, thermometer_A, SDA)))
+
+```
+
+```{r finish}
+toremove <- grep("^pisr3|pisr4", ls(), 
+                 invert = TRUE, 
+                 value = TRUE)
+
+print(toremove)
+
+rm(list = c(toremove, "toremove"))
+
+export(pisr4, "C:/Everything R/Analysis - PISR/r-project-template-based/Stereotypes in 3D/Analysis/pisrUO 22062023.sav")
+
+export(pisr3, "C:/Everything R/Analysis - PISR/r-project-template-based/Stereotypes in 3D/Analysis/pisrA 22062023.sav")
+
+```
+
